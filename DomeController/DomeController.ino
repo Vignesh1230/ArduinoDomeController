@@ -27,16 +27,28 @@ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 *******************************************************************************/
 
 #include <EEPROM.h>
-#include <avr/wdt.h>
-#include <SoftwareSerial.h>
-#include "MonsterMotorShield.h"
+//#include <avr/wdt.h>
+//#include <SoftwareSerial.h>
+//#include "MonsterMotorShield.h"
 #include "serial_command.h"
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
+
+//Wifi Configs
+const char* ssid = "Msvs-WiFi";
+const char* password = "MACERSHONE12451";
+
 
 
 // Configuration
-#define HAS_SHUTTER     // Uncomment if the shutter controller is available
+//#define HAS_SHUTTER     // Uncomment if the shutter controller is available
 //#define MOTOR_SHIELD  // Uncomment if the motor driver is a Monster Motor Shield
 //#define USE_BUTTONS   // Uncomment if you want to move the dome with push buttons
+#define USE_OTA_UPDATE 
+
 
 #define AZ_TIMEOUT      30000   // Azimuth movement timeout (in ms)
 #define AZ_TOLERANCE    4      	// Azimuth target tolerance in encoder ticks
@@ -49,6 +61,7 @@ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 #define HOME_SENSOR 10  // Home sensor (active low)
 #define BUTTON_CW   11  // CW movement button (active low)
 #define BUTTON_CCW  12  // CCW movement button (Active low)
+#define LED_BUILTIN 2 // Builtin LED
 
 #ifdef HAS_SHUTTER
 #ifdef MOTOR_SHIELD
@@ -65,7 +78,11 @@ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 #define MOTOR_JOG 7     // Motor jog mode (low speed)
 #define MOTOR_CW 8      // Move motor clockwise
 #define MOTOR_CCW 9     // Move motor counterclockwise
+#define MOTOR_DIR 25
+#define MOTOR_PWM 26
 #endif
+
+#define PWM_CHANNEL 0
 
 // Message Destination
 #define TO_MAXDOME  0x00
@@ -78,7 +95,7 @@ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 
 // Commands
 #define ABORT_CMD   0x03 // Abort azimuth movement
-#define HOME_CMD    0x04 // Move until 'home' position is detected
+#define HOME_CMD    0x04 // Move until 'ho ' position is detected
 #define GOTO_CMD    0x05 // Go to azimuth position
 #define SHUTTER_CMD 0x06 // Send a command to shutter
 #define STATUS_CMD  0x07 // Retrieve status
@@ -225,9 +242,12 @@ inline void moveAzimuth(uint8_t dir, bool slow)
     int speed = slow ? 800 : 1023;
     motor.run(dir == DIR_CW, speed);
 #else
-    digitalWrite(MOTOR_JOG, slow);
-    digitalWrite(MOTOR_CW, dir == DIR_CW);
-    digitalWrite(MOTOR_CCW, dir != DIR_CW);
+//    digitalWrite(MOTOR_JOG, slow);
+//    digitalWrite(MOTOR_CW, dir == DIR_CW);
+//    digitalWrite(MOTOR_CCW, dir != DIR_CW);
+
+    digitalWrite(MOTOR_DIR, dir == DIR_CCW); // If dir is CCW, send HIGH, default to Low 
+    ledcWrite(PWM_CHANNEL, 100);
 #endif
 }
 
@@ -237,9 +257,11 @@ inline void stopAzimuth()
 #ifdef MOTOR_SHIELD
     motor.stop();
 #else
-    digitalWrite(MOTOR_JOG, LOW);
-    digitalWrite(MOTOR_CW, LOW);
-    digitalWrite(MOTOR_CCW, LOW);
+//    digitalWrite(MOTOR_JOG, LOW);
+//    digitalWrite(MOTOR_CW, LOW);
+//    digitalWrite(MOTOR_CCW, LOW);
+      digitalWrite(MOTOR_DIR, LOW);
+      ledcWrite(PWM_CHANNEL, 100);
 #endif
 }
 
@@ -268,7 +290,8 @@ float getShutterVBat()
 #endif
 
     // Convert ADC reading to voltage
-    return (float)adc * VBAT_FACTOR + VBAT_OFFSET;
+//    return (float)adc * VBAT_FACTOR + VBAT_OFFSET;
+    return 6.9420;
 }
 
 ShutterStatus getShutterStatus()
@@ -531,8 +554,8 @@ void encoderISR()
 
 void setup()
 {
-    wdt_disable();
-    wdt_enable(WDTO_2S);
+//    wdt_disable();
+//    wdt_enable(WDTO_2S);
 
     sCmd.addCommand(ABORT_CMD, 2, cmdAbort);
     sCmd.addCommand(HOME_CMD, 2, cmdHomeAzimuth);
@@ -549,6 +572,8 @@ void setup()
     pinMode(BUTTON_CW, INPUT_PULLUP);
     pinMode(BUTTON_CCW, INPUT_PULLUP);
 
+    ledcAttachPin(MOTOR_PWM, PWM_CHANNEL);
+
 #ifndef MOTOR_SHIELD
     pinMode(MOTOR_JOG, OUTPUT);
     pinMode(MOTOR_CW, OUTPUT);
@@ -563,9 +588,71 @@ void setup()
 
     Serial.begin(19200);
 
-#ifdef HAS_SHUTTER
-    HC12.begin(9600);   // Open serial port to HC12
-#endif
+    
+  #ifdef HAS_SHUTTER
+      HC12.begin(9600);   // Open serial port to HC12
+  #endif
+
+    Serial.println("Booting");
+
+  #ifdef USE_OTA_UPDATE
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+      Serial.println("Connection Failed! Rebooting...");
+      delay(5000);
+      ESP.restart();
+    }
+
+
+    // Port defaults to 3232
+  // ArduinoOTA.setPort(3232);
+
+  // Hostname defaults to esp3232-[MAC]
+  // ArduinoOTA.setHostname("myesp32");
+
+  // No authentication by default
+  // ArduinoOTA.setPassword("admin");
+
+  // Password can be set with it's md5 value as well
+  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
+  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+  ArduinoOTA
+    .onStart([]() {
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    })
+    .onEnd([]() {
+      Serial.println("\nEnd");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+  ArduinoOTA.begin();
+
+  Serial.println("Ready");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  #endif
+    
+
 }
 
 // move the motor when the buttons are pressed
@@ -607,7 +694,12 @@ void loop()
 #ifdef USE_BUTTONS
     read_buttons();
 #endif
-    wdt_reset();
+
+#ifdef USE_OTA_UPDATE
+  ArduinoOTA.handle();
+#endif
+    
+//    wdt_reset();
 
     // store detected home position
     if (!digitalRead(HOME_SENSOR)) {

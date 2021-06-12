@@ -3,7 +3,7 @@ import logging
 import time
 import serial
 
-PORT = '/dev/ttyACM0'
+PORT = '/dev/tty.SLAB_USBtoUART'
 
 CMD_ABORT = 0x03
 CMD_HOME = 0x04
@@ -100,7 +100,7 @@ if __name__ == '__main__':
     dome = MaxDomeII(PORT)
 
     dome.send_ack()
-    for i in range(20):
+    for i in range(5):
         print dome.get_status()
         time.sleep(1)
 
@@ -108,6 +108,6 @@ if __name__ == '__main__':
     # #dome.home_azimuth()
     # time.sleep(1)
     # dome.abort()
-    # #print dome.get_voltage()
+    print dome.get_voltage()
 
     dome.close()
