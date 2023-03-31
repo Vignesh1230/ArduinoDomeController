@@ -20,44 +20,39 @@ int cspin[2] = {2, 3}; // CS: Current sense ANALOG input
 int enpin[2] = {0, 1}; // EN: Status of switches output (Analog pin)
 
 
+/* Motor driver pin definitions */
+int pwmPin = 5; // PWM input
+int dirPin = 7; // Direction input
+
+const int PWMFreq = 5000; /* 5 KHz */
+const int PWMChannel = 0;
+const int PWMResolution = 10;
 
 Motor::Motor(uint8_t n)
 {
     // _nmotor can be only 0 or 1
     _nmotor = (n > 0);
-    pinMode(inApin[_nmotor], OUTPUT);
-    pinMode(inBpin[_nmotor], OUTPUT);
-    pinMode(pwmpin[_nmotor], OUTPUT);
+    pinMode(dirPin, OUTPUT);
+    
+    ledcSetup(PWMChannel, PWMFreq, PWMResolution);
+    /* Attach the LED PWM Channel to the GPIO Pin */
+    ledcAttachPin(pwmPin, PWMChannel);
     stop();
 }
 
 void Motor::run(bool dir, int pwm)
 {
-    digitalWrite(inApin[_nmotor], dir);
-    digitalWrite(inBpin[_nmotor], !dir);
-    analogWrite(pwmpin[_nmotor], pwm);
+    digitalWrite(dirPin, dir); // Set direction to stop
+    ledcWrite(PWMChannel, pwm); // Set PWM value to running val
 }
 
 void Motor::stop()
 {
-    digitalWrite(inApin[_nmotor], LOW);
-    digitalWrite(inBpin[_nmotor], LOW);
-    analogWrite(pwmpin[_nmotor], 0);
+    digitalWrite(dirPin, LOW); // Set direction to stop
+    ledcWrite(PWMChannel, 0); // Set PWM value to running val
 }
 
 void Motor::brake()
 {
-    digitalWrite(inApin[_nmotor], HIGH);
-    digitalWrite(inBpin[_nmotor], HIGH);
-    analogWrite(pwmpin[_nmotor], 0);
-}
-
-bool Motor::isRunning()
-{
-    return digitalRead(inApin[_nmotor]) || digitalRead(inBpin[_nmotor]);
-}
-
-int Motor::readCurrent()
-{
-    return analogRead(cspin[_nmotor]);
-}
+    digitalWrite(dirPin, LOW); // Set direction to stop
+    ledcWrite(PWMChannel, 0); // Set PWM value to running val

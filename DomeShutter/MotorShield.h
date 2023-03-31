@@ -18,8 +18,6 @@ public:
     void run(bool dir, int pwm);
     void stop();
     void brake();
-    bool isRunning();
-    int readCurrent();
 private:
     uint8_t _nmotor;
 };

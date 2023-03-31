@@ -12,7 +12,7 @@
 
 #define MOTOR_OPEN 0
 #define MOTOR_CLOSE 1
-#define SPEED 1023
+#define SPEED 254
 #define DEFAULT_TIMEOUT 30000 // shutter timeout (in ms)
 
 // Shutter constructor.
